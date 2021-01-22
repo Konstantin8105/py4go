@@ -8,5 +8,6 @@ def print_x():
     if False: x = 0
 print_x()
 
+# Comment x function of x*x or not?
 x = ( x + 1) * (x + 3) * 5**8
 print(x)
