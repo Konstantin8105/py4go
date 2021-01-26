@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	filename := "/home/konstantin/go/src/github.com/Konstantin8105/py4go/p.py"
+	filename := "testdata/p.py"
 	out, err := parser.Parse(filename)
 	if err != nil {
 		panic(err)

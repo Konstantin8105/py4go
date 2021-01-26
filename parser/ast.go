@@ -8,108 +8,206 @@ import (
 	"strings"
 )
 
-type Node struct {
-	Name  string
-	Nodes []*Node
+type Node interface {
+	String() string
 }
 
-func (n *Node) RemoveEmpty() {
-	for i := 0; i < len(n.Nodes); i++ {
-		n.Nodes[i].RemoveEmpty()
-	}
-	for i := 0; i < len(n.Nodes); i++ {
-		if v := n.Nodes[i]; v.Name == "" && len(v.Nodes) == 0 {
-			n.Nodes = append(n.Nodes[:i], n.Nodes[i+1:]...)
-			n.RemoveEmpty()
-			return
-		}
-	}
+type Ident struct {
+	Name string
 }
 
-func (n Node) String() string {
+func (id Ident) String() string {
+	return id.Name
+}
+
+type List struct {
+	IsParen bool // false - [], true - ()
+	Name    string
+	Args    []Node
+}
+
+func (l List) String() string {
 	var str string
-	if n.Name != "" {
-		str += n.Name
-	} else {
-		str += "NONAME"
-	}
-	str += "(\n"
-	for i := range n.Nodes {
-		ss := strings.Split(n.Nodes[i].String(), "\n")
-		for j := range ss {
-			str += " " + ss[j] + "\n"
+	for _, v := range l.Args {
+		lines := strings.Split(v.String(), "\n")
+		for _, line := range lines {
+			str += fmt.Sprintf("  %s\n", line)
 		}
 	}
-	str += ") // " + n.Name
-	return str
+	if l.IsParen {
+		return fmt.Sprintf("%s (\n%s)", l.Name, str)
+	}
+	return fmt.Sprintf("%s [\n%s]", l.Name, str)
 }
 
-func Ast(src string) (nodes *Node, err error) {
+type Assign struct {
+	Left, Right Node
+}
 
-	src = strings.ReplaceAll(src, "=[", "[")
+func (a Assign) String() string {
+	return fmt.Sprintf("%v = %v", a.Left, a.Right)
+}
 
-	// Initialize the scanner.
-	var s scanner.Scanner
-	fset := token.NewFileSet()                               // positions are relative to fset
-	file := fset.AddFile("", fset.Base(), len(src))          // register input "file"
-	s.Init(file, []byte(src), nil /* no error handler */, 0) // scanner.ScanComments)
+func Ast(src string) (nodes Node, err error) {
 
-	// Repeated calls to Scan yield the token sequence found in the input.
-	l := list.New()
+	// scan
+	var (
+		// initialize the scanner.
+		s scanner.Scanner
+		// positions are relative to fset
+		fset = token.NewFileSet()
+		// register input "file"
+		file = fset.AddFile("", fset.Base(), len(src))
+	)
+	s.Init(file, []byte(src), nil, 0)
 
+	// store all tokens
+	type Element struct {
+		tok token.Token
+		str string
+	}
+	elements := []Element{}
 	for {
-		pos, tok, lit := s.Scan()
-		_ = pos
+		_, tok, lit := s.Scan()
 		if tok == token.EOF {
 			break
 		}
-		if tok == token.SEMICOLON {
-			continue
+		str := lit
+		if str == "" {
+			str = fmt.Sprintf("%s", tok)
 		}
-
-		s := lit
-		if s == "" {
-			s = fmt.Sprintf("%s", tok)
-		}
-
-		if nodes == (*Node)(nil) {
-			nodes = new(Node)
-			nodes.Name = s
-			l.PushFront(nodes)
-			continue
-		}
-
-		if tok == token.LPAREN ||
-			tok == token.ASSIGN ||
-			tok == token.LBRACK {
-			// add new nodes in last
-			e := l.Front().Value.(*Node)
-			e.Nodes = append(e.Nodes, new(Node))
-			l.PushFront(e.Nodes[len(e.Nodes)-1])
-			continue
-		}
-		if tok == token.RPAREN || tok == token.RBRACK {
-			// going outside
-			l.Remove(l.Front())
-			continue
-		}
-		if tok == token.COMMA {
-			l.Remove(l.Front())
-			l.Remove(l.Front())
-			e := l.Front().Value.(*Node)
-			e.Nodes = append(e.Nodes, new(Node))
-			l.PushFront(e.Nodes[len(e.Nodes)-1])
-			continue
-		}
-		l.Front().Value.(*Node).Name = s
+		elements = append(elements, Element{tok: tok, str: str})
 	}
 
-	if len(nodes.Nodes) != 1 {
-		panic(fmt.Errorf("strange : %v", len(nodes.Nodes)))
-	}
+	// convert to nodes
+	l := list.New()
+	// 	nodes = &List{Name: "py4go"}
+	// 	l.PushFront(nodes)
+	for i := 0; i < len(elements); i++ {
+		//	fmt.Println(">>>>>>>>>>>>>", elements[:i])
+		//	for e := l.Front(); e != nil; e = e.Next() {
+		//		fmt.Printf("%p %#v\n", e.Value, e.Value)
+		//	}
+		//	fmt.Println("Nodes: ", nodes)
+		//
+		//	fmt.Println("TOK : ", elements[i].tok)
+		//	fmt.Println("STR : ", elements[i].str)
+		//	fmt.Println("LEN : ", l.Len())
 
-	// remove empty nodes
-	nodes.RemoveEmpty()
+		switch elements[i].tok {
+		case token.SEMICOLON:
+			continue
+		case token.ASSIGN:
+			// example:
+			// A   = ...
+			// A() = ...
+			// A[] = ...
+			fr := l.Front().Value.(Node)
+			switch fr.(type) {
+			case (*List), (*Ident):
+				d := l.Remove(l.Front()).(Node) // Ident or List
+				a := Assign{Left: d}            // Right element later
+				a.Right = &Ident{}
+				if l.Len() == 0 {
+					l.PushFront(&a)
+				} else {
+					if list, ok := l.Front().Value.(*List); ok {
+						list.Args[len(list.Args)-1] = &a
+					} else {
+						//	l.PushFront(&a)
+						panic(l)
+					}
+				}
+				l.PushFront(a.Right)
+			default:
+				panic(fr)
+			}
+
+		case token.COMMA:
+			for {
+				if _, ok := l.Front().Value.(*List); ok {
+					break
+				}
+				l.Remove(l.Front())
+			}
+			fr := l.Front().Value.(Node)
+			switch fr.(type) {
+			case (*List):
+				list := fr.(*List)
+				id := Ident{}
+				list.Args = append(list.Args, &id)
+				l.PushFront(&id)
+			default:
+				panic(fr)
+			}
+
+		case token.LPAREN, token.LBRACK:
+			// if before ident, then it if named list
+			var fr Node
+			if 0 < l.Len() {
+				fr = l.Front().Value.(Node)
+			} else {
+				var list List
+				l.PushFront(&list)
+				continue
+			}
+			list := List{IsParen: elements[i].tok == token.LPAREN}
+			switch fr.(type) {
+			case (*Ident):
+				// example: A(...
+				id := fr.(*Ident)
+				list.Name = id.Name
+				l.Remove(l.Front())
+				if l.Len() == 0 {
+					l.PushFront(&list)
+				} else {
+					if ll, ok := l.Front().Value.(*List); ok {
+						ll.Args = append(ll.Args, &list)
+						l.PushFront(&list)
+					} else if a, ok := l.Front().Value.(*Assign); ok {
+						a.Right = &list
+						l.PushFront(&list)
+					} else {
+						panic(l.Front().Value)
+					}
+				}
+			default:
+				// example: ... = (...)
+				l.PushFront(&list)
+			}
+
+		case token.RPAREN, token.RBRACK:
+			fr := l.Front().Value.(Node)
+			if _, ok := fr.(*List); !ok {
+				l.Remove(l.Front())
+			}
+
+		default:
+			// Ident
+			id := Ident{Name: elements[i].str}
+			if l.Front() == nil {
+				l.PushFront(&id)
+				continue
+			}
+			fr := l.Front().Value.(Node)
+			switch fr.(type) {
+			case *List:
+				list := fr.(*List)
+				list.Args = append(list.Args, &id)
+				l.PushFront(&id)
+			case *Assign:
+				a := fr.(*Assign)
+				a.Right = &id
+				l.PushFront(&id)
+			case *Ident:
+				last := fr.(*Ident)
+				last.Name = id.Name
+			default:
+				panic(fr)
+			}
+		}
+		nodes = l.Back().Value.(Node)
+	}
 
 	return
 }

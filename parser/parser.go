@@ -16,6 +16,13 @@ r = open('%s','r')
 t = ast.parse(r.read())
 print(ast.dump(t))
 `
+	// current folder
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	filename = dir + string(os.PathSeparator) + filename
+	fmt.Println(filename)
 
 	// create transpiler file
 	tmpfile, err := ioutil.TempFile("", "example")
@@ -23,7 +30,8 @@ print(ast.dump(t))
 		return
 	}
 	defer os.Remove(tmpfile.Name()) // clean up
-	if _, err = tmpfile.Write([]byte(fmt.Sprintf(code, filename))); err != nil {
+	code = fmt.Sprintf(code, filename)
+	if _, err = tmpfile.Write([]byte(code)); err != nil {
 		return
 	}
 	if err = tmpfile.Close(); err != nil {
