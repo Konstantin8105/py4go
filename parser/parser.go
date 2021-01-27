@@ -8,7 +8,7 @@ import (
 	"os/exec"
 )
 
-func Parse(filename string) (_ string, err error) {
+func Parse(filename string) (nodes Node, err error) {
 	// minimal python code to ast tree generate
 	code := `
 import ast
@@ -51,5 +51,6 @@ print(ast.dump(t))
 		return
 	}
 
-	return out.String(), nil
+	// covert ast line string to nodes
+	return ast(out.String())
 }

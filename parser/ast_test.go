@@ -55,19 +55,11 @@ func TestAst(t *testing.T) {
 		"b(a(c(),d),e)",
 		"b=(a(c,d()),e)",
 		"FunctionDef(name='print_x', args=arguments(args[], vararg=None, kwarg=None, defaults[]))",
-		func() string {
-			filename := "../testdata/p.py"
-			out, err := Parse(filename)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return out
-		}(),
 	}
 
 	for i := range tcs {
 		t.Run(fmt.Sprintf("%2dT%s", i, tcs[i]), func(t *testing.T) {
-			a, err := Ast(tcs[i])
+			a, err := ast(tcs[i])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,13 +80,9 @@ func TestIntegration(t *testing.T) {
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".py") {
 			t.Run(path, func(t *testing.T) {
-				src, err := Parse(path)
+				_, err := Parse(path)
 				if err != nil {
 					return
-				}
-				_, err = Ast(src)
-				if err != nil {
-					t.Fatal(err)
 				}
 			})
 

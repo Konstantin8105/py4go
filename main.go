@@ -13,9 +13,4 @@ func main() {
 		panic(err)
 	}
 	fmt.Println(out)
-	ast, err := parser.Ast(out)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println(ast)
 }

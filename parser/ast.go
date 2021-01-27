@@ -48,7 +48,7 @@ func (a Assign) String() string {
 	return fmt.Sprintf("%v = %v", a.Left, a.Right)
 }
 
-func Ast(src string) (nodes Node, err error) {
+func ast(src string) (nodes Node, err error) {
 
 	// scan
 	var (
