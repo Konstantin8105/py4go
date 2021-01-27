@@ -1,4 +1,4 @@
-package parser
+package py4go
 
 import (
 	"bytes"
