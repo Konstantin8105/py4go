@@ -43,6 +43,11 @@ print(ast.dump(t))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err = cmd.Run(); err != nil {
+		err = fmt.Errorf("%v\n%v", err, func() error {
+			cmd := exec.Command("python", tmpfile.Name())
+			bs, err := cmd.CombinedOutput()
+			return fmt.Errorf("%v\n%v\n%s", string(bs), err, out.String())
+		}())
 		return
 	}
 

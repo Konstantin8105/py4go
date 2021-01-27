@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,5 +73,35 @@ func TestAst(t *testing.T) {
 			}
 			testCase(t, fmt.Sprintf("../testdata/.ast%02d", i), a.String())
 		})
+	}
+}
+
+func TestIntegration(t *testing.T) {
+	// FULL=true go test
+	if os.Getenv("FULL") != "true" {
+		return
+	}
+
+	err := filepath.Walk("../testdata/", func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(info.Name(), ".py") {
+			t.Run(path, func(t *testing.T) {
+				src, err := Parse(path)
+				if err != nil {
+					return
+				}
+				_, err = Ast(src)
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
