@@ -35,9 +35,9 @@ func (l List) String() string {
 		}
 	}
 	if l.IsParen {
-		return fmt.Sprintf("%s (\n%s)", l.Name, str)
+		return fmt.Sprintf("%s (\n%s) // %s", l.Name, str, l.Name)
 	}
-	return fmt.Sprintf("%s [\n%s]", l.Name, str)
+	return fmt.Sprintf("%s [\n%s] // %s", l.Name, str, l.Name)
 }
 
 type Assign struct {
@@ -81,18 +81,16 @@ func Ast(src string) (nodes Node, err error) {
 
 	// convert to nodes
 	l := list.New()
-	// 	nodes = &List{Name: "py4go"}
-	// 	l.PushFront(nodes)
 	for i := 0; i < len(elements); i++ {
-		//	fmt.Println(">>>>>>>>>>>>>", elements[:i])
-		//	for e := l.Front(); e != nil; e = e.Next() {
-		//		fmt.Printf("%p %#v\n", e.Value, e.Value)
-		//	}
-		//	fmt.Println("Nodes: ", nodes)
-		//
-		//	fmt.Println("TOK : ", elements[i].tok)
-		//	fmt.Println("STR : ", elements[i].str)
-		//	fmt.Println("LEN : ", l.Len())
+
+		// fmt.Println(">>>>>>>>>>>>>", elements[:i])
+		// for e := l.Front(); e != nil; e = e.Next() {
+		// 	fmt.Printf("%p %#v\n", e.Value, e.Value)
+		// }
+		// fmt.Println("Nodes: ", nodes)
+		// fmt.Println("TOK : ", elements[i].tok)
+		// fmt.Println("STR : ", elements[i].str)
+		// fmt.Println("LEN : ", l.Len())
 
 		switch elements[i].tok {
 		case token.SEMICOLON:
@@ -114,7 +112,6 @@ func Ast(src string) (nodes Node, err error) {
 					if list, ok := l.Front().Value.(*List); ok {
 						list.Args[len(list.Args)-1] = &a
 					} else {
-						//	l.PushFront(&a)
 						panic(l)
 					}
 				}
@@ -125,10 +122,10 @@ func Ast(src string) (nodes Node, err error) {
 
 		case token.COMMA:
 			for {
+				l.Remove(l.Front())
 				if _, ok := l.Front().Value.(*List); ok {
 					break
 				}
-				l.Remove(l.Front())
 			}
 			fr := l.Front().Value.(Node)
 			switch fr.(type) {
@@ -152,6 +149,7 @@ func Ast(src string) (nodes Node, err error) {
 				continue
 			}
 			list := List{IsParen: elements[i].tok == token.LPAREN}
+			list.Args = append(list.Args, new(Ident))
 			switch fr.(type) {
 			case (*Ident):
 				// example: A(...
@@ -162,7 +160,11 @@ func Ast(src string) (nodes Node, err error) {
 					l.PushFront(&list)
 				} else {
 					if ll, ok := l.Front().Value.(*List); ok {
-						ll.Args = append(ll.Args, &list)
+						if a2, ok := ll.Args[len(ll.Args)-1].(*Assign); ok {
+							a2.Right = &list
+						} else {
+							ll.Args[len(ll.Args)-1] = &list
+						}
 						l.PushFront(&list)
 					} else if a, ok := l.Front().Value.(*Assign); ok {
 						a.Right = &list
@@ -175,8 +177,10 @@ func Ast(src string) (nodes Node, err error) {
 				// example: ... = (...)
 				l.PushFront(&list)
 			}
+			l.PushFront(list.Args[0])
 
 		case token.RPAREN, token.RBRACK:
+			l.Remove(l.Front())
 			fr := l.Front().Value.(Node)
 			if _, ok := fr.(*List); !ok {
 				l.Remove(l.Front())

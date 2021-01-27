@@ -1,0 +1,7 @@
+body [
+  Return (
+    value = Num (
+      n = 3.1415
+    ) // Num
+  ) // Return
+] // body

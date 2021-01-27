@@ -1,0 +1,9 @@
+arguments (
+  args [
+    
+  ] // args
+  vararg
+  args [
+    
+  ] // args
+) // arguments

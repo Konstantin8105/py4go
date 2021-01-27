@@ -1,0 +1,215 @@
+Module (
+  body =  [
+    FunctionDef (
+      name = 'pi'
+      args = arguments (
+        args =  [
+          
+        ] // 
+        vararg = None
+        kwarg = None
+        defaults =  [
+          
+        ] // 
+      ) // arguments
+      body =  [
+        Return (
+          value = Num (
+            n = 3.1415
+          ) // Num
+        ) // Return
+      ] // 
+      decorator_list =  [
+        
+      ] // 
+    ) // FunctionDef
+    Print (
+      dest = None
+      values =  [
+        BinOp (
+          left = Num (
+            n = 2
+          ) // Num
+          op = Mult (
+            
+          ) // Mult
+          right = Call (
+            func = Name (
+              id = 'pi'
+              ctx = Load (
+                
+              ) // Load
+            ) // Name
+            args =  [
+              
+            ] // 
+            keywords =  [
+              
+            ] // 
+            starargs = None
+            kwargs = None
+          ) // Call
+        ) // BinOp
+      ] // 
+      nl = True
+    ) // Print
+    Assign (
+      targets =  [
+        Name (
+          id = 'x'
+          ctx = Store (
+            
+          ) // Store
+        ) // Name
+      ] // 
+      value = Num (
+        n = 1
+      ) // Num
+    ) // Assign
+    FunctionDef (
+      name = 'print_x'
+      args = arguments (
+        args =  [
+          
+        ] // 
+        vararg = None
+        kwarg = None
+        defaults =  [
+          
+        ] // 
+      ) // arguments
+      body =  [
+        Print (
+          dest = None
+          values =  [
+            Name (
+              id = 'x'
+              ctx = Load (
+                
+              ) // Load
+            ) // Name
+          ] // 
+          nl = True
+        ) // Print
+        If (
+          test = Name (
+            id = 'False'
+            ctx = Load (
+              
+            ) // Load
+          ) // Name
+          body =  [
+            Assign (
+              targets =  [
+                Name (
+                  id = 'x'
+                  ctx = Store (
+                    
+                  ) // Store
+                ) // Name
+              ] // 
+              value = Num (
+                n = 0
+              ) // Num
+            ) // Assign
+          ] // 
+          orelse =  [
+            
+          ] // 
+        ) // If
+      ] // 
+      decorator_list =  [
+        
+      ] // 
+    ) // FunctionDef
+    Expr (
+      value = Call (
+        func = Name (
+          id = 'print_x'
+          ctx = Load (
+            
+          ) // Load
+        ) // Name
+        args =  [
+          
+        ] // 
+        keywords =  [
+          
+        ] // 
+        starargs = None
+        kwargs = None
+      ) // Call
+    ) // Expr
+    Assign (
+      targets =  [
+        Name (
+          id = 'x'
+          ctx = Store (
+            
+          ) // Store
+        ) // Name
+      ] // 
+      value = BinOp (
+        left = BinOp (
+          left = BinOp (
+            left = Name (
+              id = 'x'
+              ctx = Load (
+                
+              ) // Load
+            ) // Name
+            op = Add (
+              
+            ) // Add
+            right = Num (
+              n = 1
+            ) // Num
+          ) // BinOp
+          op = Mult (
+            
+          ) // Mult
+          right = BinOp (
+            left = Name (
+              id = 'x'
+              ctx = Load (
+                
+              ) // Load
+            ) // Name
+            op = Add (
+              
+            ) // Add
+            right = Num (
+              n = 3
+            ) // Num
+          ) // BinOp
+        ) // BinOp
+        op = Mult (
+          
+        ) // Mult
+        right = BinOp (
+          left = Num (
+            n = 5
+          ) // Num
+          op = Pow (
+            
+          ) // Pow
+          right = Num (
+            n = 8
+          ) // Num
+        ) // BinOp
+      ) // BinOp
+    ) // Assign
+    Print (
+      dest = None
+      values =  [
+        Name (
+          id = 'x'
+          ctx = Load (
+            
+          ) // Load
+        ) // Name
+      ] // 
+      nl = True
+    ) // Print
+  ] // 
+) // Module

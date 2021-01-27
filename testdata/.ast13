@@ -1,0 +1,10 @@
+arguments (
+  args [
+    
+  ] // args
+  vararg = None
+  kwarg = None
+  defaults [
+    
+  ] // defaults
+) // arguments

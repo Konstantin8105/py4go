@@ -1,0 +1,13 @@
+Assign (
+  targets =  [
+    Name (
+      id = 'x'
+      ctx = Store (
+        
+      ) // Store
+    ) // Name
+  ] // 
+  value = Num (
+    n = 1
+  ) // Num
+) // Assign
