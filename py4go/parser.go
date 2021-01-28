@@ -8,6 +8,7 @@ import (
 	"os/exec"
 )
 
+// Parse python file to ast python tree
 func Parse(filename string) (nodes Node, err error) {
 	// minimal python code to ast tree generate
 	code := `

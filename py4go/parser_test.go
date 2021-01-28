@@ -1,12 +1,10 @@
-package py4go_test
+package py4go
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/Konstantin8105/py4go/py4go"
 )
 
 func TestIntegration(t *testing.T) {
@@ -21,7 +19,7 @@ func TestIntegration(t *testing.T) {
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".py") {
 			t.Run(path, func(t *testing.T) {
-				_, err := py4go.Parse(path)
+				_, err := Parse(path)
 				if err != nil {
 					return
 				}
