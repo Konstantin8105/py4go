@@ -49,6 +49,10 @@ func view(g interface{}) {
 	_ = goast.Print(fset, g)
 }
 
+func clearName(str string) string {
+	return strings.Replace(str, "'", "", -1)
+}
+
 func transpile(n Node) (decls []goast.Decl, err error) {
 	et := errors.New("Error in func transpile")
 	switch v := n.(type) {
@@ -86,7 +90,7 @@ func transpile(n Node) (decls []goast.Decl, err error) {
 				case *Assign:
 					if id, ok := vv.Left.(*Ident); ok && id.Name == "name" {
 						decl.Name = goast.NewIdent(
-							strings.Replace(vv.Right.(*Ident).Name, "'", "", -1))
+							clearName(vv.Right.(*Ident).Name))
 					}
 					if id, ok := vv.Left.(*Ident); ok && id.Name == "body" {
 						var (
@@ -146,6 +150,11 @@ func transpileStmts(n Node) (stmts []goast.Stmt, err error) {
 func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 	et := errors.New("Error in func transpileStmt")
 	switch v := n.(type) {
+	case *Ident:
+		if v.Name == "" {
+			// ignore empty ident
+			break
+		}
 	case *List:
 		switch v.Name {
 		case "Return":
@@ -158,8 +167,89 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			ret.Results = append(ret.Results, expr)
 			stmt = ret
 
+		case "If":
+			// From:
+			//
+			// If (
+			//   test = Name (
+			//     id = 'False'
+			//   )
+			//   body   =  [ ... ]
+			//   orelse =  [ ... ]
+			// )
+			//
+			// To:
+			//
+			// *ast.IfStmt {
+			//    Cond: *ast.BinaryExpr {
+			//       X: {}
+			//       Op: ==
+			//       Y: {}
+			//    }
+			//    Body: *ast.BlockStmt { }
+			//    Else: *ast.BlockStmt { }
+			// }
+			ifs := &goast.IfStmt{}
+			for i := range v.Args {
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				id, ok := a.Left.(*Ident)
+				if !ok {
+					continue
+				}
+				switch id.Name {
+				case "test":
+					expr, errExpr := transpileExpr(a.Right)
+					if errExpr != nil {
+						et.Add(errExpr)
+						break
+					}
+					ifs.Cond = expr
+				case "body":
+					stmts, errStmts := transpileStmts(a.Right)
+					if errStmts != nil {
+						et.Add(errStmts)
+						break
+					}
+					ifs.Body = &goast.BlockStmt{
+						List: stmts,
+					}
+				case "orelse":
+					stmts, errStmts := transpileStmts(a.Right)
+					if errStmts != nil {
+						et.Add(errStmts)
+						break
+					}
+					ifs.Else = &goast.BlockStmt{
+						List: stmts,
+					}
+				}
+			}
+			stmt = ifs
+			view(ifs)
+			fmt.Println(n)
+
 		default:
-			et.Add(fmt.Errorf("unknown name : %s %s", v.Name, n))
+			call := &goast.CallExpr{}
+			call.Fun = goast.NewIdent(v.Name)
+			for i := range v.Args {
+				if a, ok := v.Args[i].(*Assign); ok {
+					if id, ok := a.Left.(*Ident); ok && id.Name == "values" {
+						list := a.Right.(*List)
+						for j := range list.Args {
+							expr, errExpr := transpileExpr(list.Args[j])
+							if errExpr != nil {
+								et.Add(errExpr)
+								break
+							}
+							call.Args = append(call.Args, expr)
+						}
+					}
+				}
+			}
+			stmt = &goast.ExprStmt{X: call}
 		}
 
 	default:
@@ -187,9 +277,32 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 			if a, ok := v.Args[0].(*Assign); ok {
 				if id, ok := a.Left.(*Ident); ok && id.Name == "n" {
 					expr = goast.NewIdent(a.Right.(*Ident).Name)
+					break
 				}
 			}
 		}
+		if v.Name == "Name" {
+			if a, ok := v.Args[0].(*Assign); ok {
+				id := a.Right.(*Ident) // id
+				expr = goast.NewIdent(clearName(id.Name))
+				break
+			}
+		}
+		// 	fmt.Println(	">>", v.Name)
+		// if v.Name == "Expr" {
+		// 	//	Expr (
+		// 	//		value = Call (...)
+		// 	//	)
+		// 	for i := range v.Args {
+		// 		if a, ok := v.Args[i].(*Assign); ok {
+		// 			// value = Call(...)
+		// 			if id, ok := a.Left.(*Ident); ok && id.Name == "value" {
+		// 				return transpileExpr(a.Right)
+		// 			}
+		// 		}
+		// 	}
+		// }
+		et.Add(fmt.Errorf("List : %s", n))
 	default:
 		et.Add(fmt.Errorf("cannot transpile : %s", n))
 	}
