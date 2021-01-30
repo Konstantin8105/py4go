@@ -17,12 +17,24 @@ func Transpile(nodes Node) (gocode string, err error) {
 	}
 
 	// tranpiling
-	decls, errDecls := transpile(nodes)
+	decls, stmts, errDecls := transpile(nodes)
 	defer func() {
 		if errDecls != nil {
 			err = fmt.Errorf("%v\n%v", err, errDecls)
 		}
 	}()
+
+	if 0 < len(stmts) {
+		mainDecl := goast.FuncDecl{
+			Name: goast.NewIdent("main"),
+			Type: &goast.FuncType{
+				Params: &goast.FieldList{},
+			},
+			Body: &goast.BlockStmt{List: stmts},
+		}
+		decls = append(decls, &mainDecl)
+	}
+
 	gonode.Decls = decls
 
 	// Create a FileSet for node. Since the node does not come
@@ -64,8 +76,20 @@ func isIdent(n Node, name string) (ind *Ident, ok bool) {
 	return ind, true
 }
 
-func transpile(n Node) (decls []goast.Decl, err error) {
+func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 	et := errors.New("Error in func transpile")
+
+	addToMainStmt := func(n Node) {
+		stmt, errStmt := transpileStmt(n)
+		if errStmt != nil {
+			et.Add(errStmt)
+			return
+		}
+		if stmt != nil {
+			stmts = append(stmts, stmt)
+		}
+	}
+
 	switch v := n.(type) {
 	case *List:
 		switch v.Name {
@@ -75,8 +99,9 @@ func transpile(n Node) (decls []goast.Decl, err error) {
 					if _, ok := isIdent(a.Left, "body"); ok {
 						if right, ok := a.Right.(*List); ok {
 							for j := range right.Args {
-								ds, err := transpile(right.Args[j])
+								ds, dstmts, err := transpile(right.Args[j])
 								decls = append(decls, ds...)
+								stmts = append(stmts, dstmts...)
 								et.Add(err)
 							}
 						} else {
@@ -121,10 +146,12 @@ func transpile(n Node) (decls []goast.Decl, err error) {
 			}
 			decls = append(decls, &decl)
 		default:
-			et.Add(fmt.Errorf("cannot transpile List : %s", n))
+			addToMainStmt(n)
+			// et.Add(fmt.Errorf("cannot transpile List : %s", n))
 		}
 	default:
-		et.Add(fmt.Errorf("cannot transpile : %s", n))
+		addToMainStmt(n)
+		//et.Add(fmt.Errorf("cannot transpile : %s", n))
 	}
 	if et.IsError() {
 		err = et
@@ -200,8 +227,32 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			// .  .  Value: "0"
 			// .  }
 			// }
-			et.Add(fmt.Errorf("%s", n))
-			// TODO
+			var left, right goast.Expr
+			for i := range v.Args {
+				if a, ok := v.Args[i].(*Assign); ok {
+					if _, ok := isIdent(a.Left, "targets"); ok {
+						var errLeft error
+						left, errLeft = transpileExpr(a.Right.(*List).Args[0])
+						if errLeft != nil {
+							et.Add(errLeft)
+							break
+						}
+					}
+					if _, ok := isIdent(a.Left, "value"); ok {
+						var errRight error
+						right, errRight = transpileExpr(a.Right)
+						if errRight != nil {
+							et.Add(errRight)
+							break
+						}
+					}
+				}
+			}
+			stmt = &goast.AssignStmt{
+				Lhs: []goast.Expr{left},
+				Tok: token.ASSIGN,
+				Rhs: []goast.Expr{right},
+			}
 
 		case "Return":
 			ret := &goast.ReturnStmt{}
@@ -212,6 +263,17 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			}
 			ret.Results = append(ret.Results, expr)
 			stmt = ret
+
+		case "Expr":
+			//	Expr (
+			//		value = Call (...)
+			//	)
+			expr, errExpr := transpileExpr(v.Args[0])
+			if errExpr != nil {
+				et.Add(errExpr)
+				break
+			}
+			stmt = &goast.ExprStmt{X: expr}
 
 		case "If":
 			// From:
@@ -316,16 +378,13 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 	et := errors.New("Error in func transpileExpr")
 	switch v := n.(type) {
 	case *Assign:
-		if id, ok := v.Left.(*Ident); ok {
-			switch id.Name {
-			case "value":
-				return transpileExpr(v.Right)
-			}
+		if _, ok := isIdent(v.Left, "value"); ok {
+			return transpileExpr(v.Right)
 		}
 	case *List:
 		if len(v.Args) == 1 {
 			if a, ok := v.Args[0].(*Assign); ok {
-				if id, ok := a.Left.(*Ident); ok && id.Name == "n" {
+				if _, ok := isIdent(a.Left, "n"); ok {
 					expr = goast.NewIdent(a.Right.(*Ident).Name)
 					break
 				}
@@ -338,20 +397,46 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 				break
 			}
 		}
-		// 	fmt.Println(	">>", v.Name)
-		// if v.Name == "Expr" {
-		// 	//	Expr (
-		// 	//		value = Call (...)
-		// 	//	)
-		// 	for i := range v.Args {
-		// 		if a, ok := v.Args[i].(*Assign); ok {
-		// 			// value = Call(...)
-		// 			if id, ok := a.Left.(*Ident); ok && id.Name == "value" {
-		// 				return transpileExpr(a.Right)
-		// 			}
-		// 		}
-		// 	}
-		// }
+
+		//	Expr (
+		//		value = Call (...)
+		//	)
+		if v.Name == "Expr" {
+			return transpileExpr(v.Args[0])
+		}
+
+		// Call (
+		//   func = Name (
+		//     id = 'print_x'
+		//     ctx = Load (
+		//     ) // Load
+		//   ) // Name
+		//   args =  [
+		//   ] //
+		//   keywords =  [
+		//   ] //
+		//   starargs = None
+		//   kwargs = None
+		// ) // Call
+		if v.Name == "Call" {
+			callExpr:= goast.CallExpr{
+			}
+			for i := range v.Args {
+				if a, ok := v.Args[i].(*Assign); ok {
+					if _, ok := isIdent(a.Left, "func"); ok {
+						var errFun error
+						if errFun != nil {
+							et.Add(errFun)
+							break
+						}
+						callExpr.Fun, errFun = transpileExpr(a.Right)
+					}
+				}
+			}
+			expr = &callExpr
+			break
+		}
+
 		et.Add(fmt.Errorf("List : %s", n))
 	default:
 		et.Add(fmt.Errorf("cannot transpile : %s", n))
