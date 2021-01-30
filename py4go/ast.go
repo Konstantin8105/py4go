@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/scanner"
 	"go/token"
+	"runtime/debug"
 	"strings"
 )
 
@@ -49,6 +50,15 @@ func (a Assign) String() string {
 }
 
 func ast(src string) (nodes Node, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf(
+				"func ast\nstacktrace from panic: \n %s\n %v",
+				string(debug.Stack()),
+				err,
+			)
+		}
+	}()
 
 	// scan
 	var (

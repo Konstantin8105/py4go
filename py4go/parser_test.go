@@ -19,10 +19,17 @@ func TestIntegration(t *testing.T) {
 		}
 		if !info.IsDir() && strings.HasSuffix(info.Name(), ".py") {
 			t.Run(path, func(t *testing.T) {
-				_, err := Parse(path)
+				ast, err := Parse(path)
 				if err != nil {
 					return
 				}
+				code, err := Transpile(ast)
+				if err != nil {
+					t.Errorf("%s", err)
+					return
+				}
+				t.Logf("%s", ast)
+				t.Logf("%s", code)
 			})
 		}
 		return nil

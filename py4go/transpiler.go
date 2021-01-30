@@ -6,6 +6,7 @@ import (
 	goast "go/ast"
 	"go/format"
 	"go/token"
+	"runtime/debug"
 	"strings"
 
 	"github.com/Konstantin8105/errors"
@@ -44,8 +45,13 @@ func Transpile(nodes Node) (gocode string, err error) {
 	var buf bytes.Buffer
 	defer func() {
 		if r := recover(); r != nil {
+			fmt.Println(nodes)
 			_ = goast.Print(fset, gonode)
-			err = fmt.Errorf("%#v", r)
+			err = fmt.Errorf(
+				"func Transpile\nstacktrace from panic: \n %s\n %v",
+				string(debug.Stack()),
+				err,
+			)
 		}
 	}()
 	err = format.Node(&buf, fset, gonode)
@@ -79,7 +85,7 @@ func isIdent(n Node, name string) (ind *Ident, ok bool) {
 func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 	et := errors.New("Error in func transpile")
 
-	addToMainStmt := func(n Node) {
+	addStmt := func(n Node) {
 		stmt, errStmt := transpileStmt(n)
 		if errStmt != nil {
 			et.Add(errStmt)
@@ -114,6 +120,36 @@ func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 					et.Add(fmt.Errorf("expect Assign: %s", n))
 				}
 			}
+		case "ClassDef":
+			// ClassDef (
+			//  name = 'RiksSolver'
+			//  bases =  [
+			//    Name (
+			//      id = 'BaseModule'
+			//    ) // Name
+			//  ] //
+			//  body =  [ ... ]
+			// ) // ClassDef
+
+			// TODO
+			for i := range v.Args {
+				if a, ok := v.Args[i].(*Assign); ok {
+					if _, ok := isIdent(a.Left, "body"); ok {
+						if l, ok := a.Right.(*List); ok {
+							for k := range l.Args {
+								d, s, e := transpile(l.Args[k])
+								if e != nil {
+									et.Add(e)
+								} else {
+									decls = append(decls, d...)
+									stmts = append(stmts, s...)
+								}
+							}
+						}
+					}
+				}
+			}
+
 		case "FunctionDef":
 			decl := goast.FuncDecl{
 				Type: &goast.FuncType{
@@ -146,12 +182,10 @@ func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 			}
 			decls = append(decls, &decl)
 		default:
-			addToMainStmt(n)
-			// et.Add(fmt.Errorf("cannot transpile List : %s", n))
+			addStmt(n)
 		}
 	default:
-		addToMainStmt(n)
-		//et.Add(fmt.Errorf("cannot transpile : %s", n))
+		addStmt(n)
 	}
 	if et.IsError() {
 		err = et
@@ -195,6 +229,28 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 		}
 	case *List:
 		switch v.Name {
+		case "Import":
+			// Import (
+			//   names =  [
+			//     alias (
+			//       name = 'setuptools'
+			//       asname = None
+			//     ) // alias
+			//   ] //
+			// ) // Import
+			break // ignore
+		case "ImportFrom":
+			// ImportFrom (
+			//   module = 'pyfem.elements.Spring'
+			//   names =  [
+			//     alias (
+			//       name = 'Spring'
+			//       asname = None
+			//     ) // alias
+			//   ] //
+			//   level = 0
+			// ) // ImportFrom
+			break // ignore
 		case "Assign":
 			// from:
 			//
@@ -361,7 +417,9 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 					}
 				}
 			}
-			stmt = &goast.ExprStmt{X: call}
+			if !et.IsError() {
+				stmt = &goast.ExprStmt{X: call}
+			}
 		}
 
 	default:
@@ -432,7 +490,9 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 					}
 				}
 			}
-			expr = &callExpr
+			if !et.IsError() {
+				expr = &callExpr
+			}
 			break
 		}
 
@@ -514,7 +574,13 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 	return
 }
 
+const (
+	// python specific token
+	POW token.Token = 100000
+)
+
 func tranpileOp(n Node) (tok token.Token, err error) {
+	et := errors.New("Error in func transpileOp")
 	l, ok := n.(*List)
 	if !ok {
 		err = fmt.Errorf("not valid List: %s", n)
@@ -527,228 +593,15 @@ func tranpileOp(n Node) (tok token.Token, err error) {
 		tok = token.ADD
 	case "Pow":
 		tok = POW
+	case "Div":
+		tok = token.QUO
 	default:
 		tok = token.AND_NOT_ASSIGN // some trash token
-		err = fmt.Errorf("not valid token: %s", l.Name)
+		et.Add(fmt.Errorf("not valid token: %s", l.Name))
+	}
+	if et.IsError() {
+		err = et
+		return
 	}
 	return
 }
-
-const POW token.Token = 100000
-
-// /home/konstantin/go/src/github.com/Konstantin8105/py4go/py4go/../testdata/p.py
-// Module (
-//   body =  [
-//     FunctionDef (
-//       name = 'pi'
-//       args = arguments (
-//         args =  [
-//
-//         ] //
-//         vararg = None
-//         kwarg = None
-//         defaults =  [
-//
-//         ] //
-//       ) // arguments
-//       body =  [
-//         Return (
-//           value = Num (
-//             n = 3.1415
-//           ) // Num
-//         ) // Return
-//       ] //
-//       decorator_list =  [
-//
-//       ] //
-//     ) // FunctionDef
-//     Print (
-//       dest = None
-//       values =  [
-//         BinOp (
-//           left = Num (
-//             n = 2
-//           ) // Num
-//           op = Mult (
-//
-//           ) // Mult
-//           right = Call (
-//             func = Name (
-//               id = 'pi'
-//               ctx = Load (
-//
-//               ) // Load
-//             ) // Name
-//             args =  [
-//
-//             ] //
-//             keywords =  [
-//
-//             ] //
-//             starargs = None
-//             kwargs = None
-//           ) // Call
-//         ) // BinOp
-//       ] //
-//       nl = True
-//     ) // Print
-//     Assign (
-//       targets =  [
-//         Name (
-//           id = 'x'
-//           ctx = Store (
-//
-//           ) // Store
-//         ) // Name
-//       ] //
-//       value = Num (
-//         n = 1
-//       ) // Num
-//     ) // Assign
-//     FunctionDef (
-//       name = 'print_x'
-//       args = arguments (
-//         args =  [
-//
-//         ] //
-//         vararg = None
-//         kwarg = None
-//         defaults =  [
-//
-//         ] //
-//       ) // arguments
-//       body =  [
-//         Print (
-//           dest = None
-//           values =  [
-//             Name (
-//               id = 'x'
-//               ctx = Load (
-//
-//               ) // Load
-//             ) // Name
-//           ] //
-//           nl = True
-//         ) // Print
-//         If (
-//           test = Name (
-//             id = 'False'
-//             ctx = Load (
-//
-//             ) // Load
-//           ) // Name
-//           body =  [
-//             Assign (
-//               targets =  [
-//                 Name (
-//                   id = 'x'
-//                   ctx = Store (
-//
-//                   ) // Store
-//                 ) // Name
-//               ] //
-//               value = Num (
-//                 n = 0
-//               ) // Num
-//             ) // Assign
-//           ] //
-//           orelse =  [
-//
-//           ] //
-//         ) // If
-//       ] //
-//       decorator_list =  [
-//
-//       ] //
-//     ) // FunctionDef
-//     Expr (
-//       value = Call (
-//         func = Name (
-//           id = 'print_x'
-//           ctx = Load (
-//
-//           ) // Load
-//         ) // Name
-//         args =  [
-//
-//         ] //
-//         keywords =  [
-//
-//         ] //
-//         starargs = None
-//         kwargs = None
-//       ) // Call
-//     ) // Expr
-//     Assign (
-//       targets =  [
-//         Name (
-//           id = 'x'
-//           ctx = Store (
-//
-//           ) // Store
-//         ) // Name
-//       ] //
-//       value = BinOp (
-//         left = BinOp (
-//           left = BinOp (
-//             left = Name (
-//               id = 'x'
-//               ctx = Load (
-//
-//               ) // Load
-//             ) // Name
-//             op = Add (
-//
-//             ) // Add
-//             right = Num (
-//               n = 1
-//             ) // Num
-//           ) // BinOp
-//           op = Mult (
-//
-//           ) // Mult
-//           right = BinOp (
-//             left = Name (
-//               id = 'x'
-//               ctx = Load (
-//
-//               ) // Load
-//             ) // Name
-//             op = Add (
-//
-//             ) // Add
-//             right = Num (
-//               n = 3
-//             ) // Num
-//           ) // BinOp
-//         ) // BinOp
-//         op = Mult (
-//
-//         ) // Mult
-//         right = BinOp (
-//           left = Num (
-//             n = 5
-//           ) // Num
-//           op = Pow (
-//
-//           ) // Pow
-//           right = Num (
-//             n = 8
-//           ) // Num
-//         ) // BinOp
-//       ) // BinOp
-//     ) // Assign
-//     Print (
-//       dest = None
-//       values =  [
-//         Name (
-//           id = 'x'
-//           ctx = Load (
-//
-//           ) // Load
-//         ) // Name
-//       ] //
-//       nl = True
-//     ) // Print
-//   ] //
-// ) // Module
