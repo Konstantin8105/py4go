@@ -23,7 +23,6 @@ print(ast.dump(t))
 		return
 	}
 	filename = dir + string(os.PathSeparator) + filename
-	fmt.Println(filename)
 
 	// create transpiler file
 	tmpfile, err := ioutil.TempFile("", "example")

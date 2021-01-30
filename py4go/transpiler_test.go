@@ -1,18 +1,16 @@
 package py4go
 
-import (
-	"fmt"
-	"os"
-)
+import "testing"
 
-func ExampleTranspile() {
+func TestTranspile(t *testing.T) {
 	filename := "../testdata/p.py"
 	asttree, err := Parse(filename)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
-	// TODO: fmt.Fprintln(os.Stdout, asttree)
 	code, err := Transpile(asttree)
-	fmt.Fprintln(os.Stdout, code, "\n", err)
-	// Output:
+	if err != nil {
+		t.Fatal(err)
+	}
+	testCase(t, "../testdata/.p.py.go", code)
 }

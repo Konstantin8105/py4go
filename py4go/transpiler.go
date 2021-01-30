@@ -419,8 +419,7 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		//   kwargs = None
 		// ) // Call
 		if v.Name == "Call" {
-			callExpr:= goast.CallExpr{
-			}
+			callExpr := goast.CallExpr{}
 			for i := range v.Args {
 				if a, ok := v.Args[i].(*Assign); ok {
 					if _, ok := isIdent(a.Left, "func"); ok {
@@ -437,6 +436,73 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 			break
 		}
 
+		// BinOp (
+		//   left = ...
+		//   op = ...
+		//   right = ...
+		// ) // BinOp
+		if v.Name == "BinOp" {
+			bin := goast.BinaryExpr{}
+			for i := range v.Args {
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				if _, ok := isIdent(a.Left, "left"); ok {
+					ep, errp := transpileExpr(a.Right)
+					if errp != nil {
+						et.Add(errp)
+						break
+					}
+					bin.X = ep
+				}
+				if _, ok := isIdent(a.Left, "op"); ok {
+					tok, errp := tranpileOp(a.Right)
+					if errp != nil {
+						et.Add(errp)
+						break
+					}
+					bin.Op = tok
+				}
+				if _, ok := isIdent(a.Left, "right"); ok {
+					ep, errp := transpileExpr(a.Right)
+					if errp != nil {
+						et.Add(errp)
+						break
+					}
+					bin.Y = ep
+				}
+			}
+
+			// Power exception
+			if bin.Op == POW {
+				// *ast.CallExpr {
+				// Fun: *ast.SelectorExpr {
+				// .  X: *ast.Ident {
+				// .  .  Name: "math"
+				// .  }
+				// .  Sel: *ast.Ident {
+				// .  .  Name: "Pow"
+				// .  }
+				// }
+				// Args: []ast.Expr (len = 2) {
+				// .  0: *ast.Ident {
+				// .  .  Name: "x"
+				// .  }
+				// .  1: *ast.Ident {
+				// .  .  Name: "y"
+				// .  }
+				// }
+				expr = &goast.CallExpr{
+					Fun:  goast.NewIdent("math.Pow"),
+					Args: []goast.Expr{bin.X, bin.Y},
+				}
+			} else {
+				expr = &bin
+			}
+			break
+		}
+
 		et.Add(fmt.Errorf("List : %s", n))
 	default:
 		et.Add(fmt.Errorf("cannot transpile : %s", n))
@@ -446,8 +512,29 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		return
 	}
 	return
-
 }
+
+func tranpileOp(n Node) (tok token.Token, err error) {
+	l, ok := n.(*List)
+	if !ok {
+		err = fmt.Errorf("not valid List: %s", n)
+		return
+	}
+	switch l.Name {
+	case "Mult":
+		tok = token.MUL
+	case "Add":
+		tok = token.ADD
+	case "Pow":
+		tok = POW
+	default:
+		tok = token.AND_NOT_ASSIGN // some trash token
+		err = fmt.Errorf("not valid token: %s", l.Name)
+	}
+	return
+}
+
+const POW token.Token = 100000
 
 // /home/konstantin/go/src/github.com/Konstantin8105/py4go/py4go/../testdata/p.py
 // Module (
