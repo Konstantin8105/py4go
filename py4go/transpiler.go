@@ -131,7 +131,7 @@ func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 			//  body =  [ ... ]
 			// ) // ClassDef
 
-			// TODO
+			// TODO - add as part of struct
 			for i := range v.Args {
 				if a, ok := v.Args[i].(*Assign); ok {
 					if _, ok := isIdent(a.Left, "body"); ok {
@@ -439,6 +439,11 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		if _, ok := isIdent(v.Left, "value"); ok {
 			return transpileExpr(v.Right)
 		}
+		if _, ok := isIdent(v.Left, "attr"); ok {
+			expr = goast.NewIdent(clearName(fmt.Sprintf("%s", v.Right)))
+			break
+		}
+
 	case *List:
 		if len(v.Args) == 1 {
 			if a, ok := v.Args[0].(*Assign); ok {
@@ -492,6 +497,41 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 			}
 			if !et.IsError() {
 				expr = &callExpr
+			}
+			break
+		}
+
+		//  Attribute (
+		//    value = Name (
+		//    	id = 'self'
+		//    ) // Name
+		//    attr = 'tol'
+		//  ) // Attribute
+		if v.Name == "Attribute" {
+			name := ""
+			for i := range v.Args {
+				a,ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				_,ok1 := isIdent(a.Left, "value")
+				_,ok2 := isIdent(a.Left, "attr")
+				if !(ok1 || ok2) {
+					continue
+				}
+				ea, erra := transpileExpr(v.Args[i])
+				if erra != nil {
+					et.Add(erra)
+					continue
+				}
+				if id, ok := ea.(*goast.Ident); ok {
+					name += id.Name + "."
+				} else {
+					et.Add(fmt.Errorf("Expect goast.Ident: %v for %s", ea, v.Args[i]))
+				}
+			}
+			if !et.IsError() {
+				expr = goast.NewIdent(name[:len(name)-2]) // for avoid last point
 			}
 			break
 		}
