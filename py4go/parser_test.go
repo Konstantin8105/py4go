@@ -24,12 +24,12 @@ func TestIntegration(t *testing.T) {
 					return
 				}
 				code, err := Transpile(ast)
+				t.Logf("%s", ast)
+				t.Logf("%s", code)
 				if err != nil {
 					t.Errorf("%s", err)
 					return
 				}
-				t.Logf("%s", ast)
-				t.Logf("%s", code)
 			})
 		}
 		return nil

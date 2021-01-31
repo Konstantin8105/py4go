@@ -26,14 +26,13 @@ func Transpile(nodes Node) (gocode string, err error) {
 	}()
 
 	if 0 < len(stmts) {
-		mainDecl := goast.FuncDecl{
+		decls = append(decls, &goast.FuncDecl{
 			Name: goast.NewIdent("main"),
 			Type: &goast.FuncType{
 				Params: &goast.FieldList{},
 			},
 			Body: &goast.BlockStmt{List: stmts},
-		}
-		decls = append(decls, &mainDecl)
+		})
 	}
 
 	gonode.Decls = decls
@@ -158,26 +157,29 @@ func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 				Body: &goast.BlockStmt{},
 			}
 			for i := range v.Args {
-				switch vv := v.Args[i].(type) {
-				case *Assign:
-					if _, ok := isIdent(vv.Left, "name"); ok {
-						name := fmt.Sprintf("%s", vv.Right)
-						decl.Name = goast.NewIdent(clearName(name))
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				if _, ok := isIdent(a.Left, "name"); ok {
+					n,en := transpileExpr(a.Right)
+					if en!=nil{
+						et.Add(en)
+						continue
 					}
-					if _, ok := isIdent(vv.Left, "body"); ok {
-						var (
-							errBody error
-							body    []goast.Stmt
-						)
-						body, errBody = transpileStmts(vv.Right)
-						if errBody != nil {
-							et.Add(errBody)
-							continue
-						}
-						decl.Body.List = append(decl.Body.List, body...)
+					decl.Name = n
+				}
+				if _, ok := isIdent(a.Left, "body"); ok {
+					var (
+						errBody error
+						body    []goast.Stmt
+					)
+					body, errBody = transpileStmts(a.Right)
+					if errBody != nil {
+						et.Add(errBody)
+						continue
 					}
-
-				default:
+					decl.Body.List = append(decl.Body.List, body...)
 				}
 			}
 			decls = append(decls, &decl)
@@ -443,6 +445,10 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 			expr = goast.NewIdent(clearName(fmt.Sprintf("%s", v.Right)))
 			break
 		}
+		if _, ok := isIdent(v.Left, "name"); ok {
+			expr = goast.NewIdent(clearName(fmt.Sprintf("%s", v.Right)))
+			break
+		}
 
 	case *List:
 		if len(v.Args) == 1 {
@@ -466,6 +472,100 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		//	)
 		if v.Name == "Expr" {
 			return transpileExpr(v.Args[0])
+		}
+
+		// UnaryOp (
+		//    op = Not ( )
+		//    operand = ...
+		// )
+		if v.Name == "UnaryOp" {
+			unary := goast.UnaryExpr{}
+			for i := range v.Args {
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				_, ok1 := isIdent(a.Left, "op")
+				_, ok2 := isIdent(a.Left, "operand")
+				if !(ok1 || ok2) {
+					continue
+				}
+				if ok1 {
+					tok, errp := transpileOp(a.Right)
+					if errp != nil {
+						et.Add(errp)
+					}
+					if !et.IsError() {
+						unary.Op = tok
+					}
+				}
+				if ok2 {
+					exprp, errp := transpileExpr(a.Right)
+					if errp != nil {
+						et.Add(errp)
+					}
+					if !et.IsError() {
+						unary.X = exprp
+					}
+				}
+			}
+			if !et.IsError() {
+				expr = &unary
+			}
+			break
+		}
+
+		// Compare (
+		//   left = ...
+		//   ops  = ...
+		//   comparators = ...
+		// ) // Compare
+		if v.Name == "Compare" {
+			bin := goast.BinaryExpr{}
+			for i := range v.Args {
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				if _, ok := isIdent(a.Left, "left"); ok {
+					ep, errp := transpileExpr(a.Right)
+					if errp != nil {
+						et.Add(errp)
+						break
+					}
+					bin.X = ep
+				}
+				if _, ok := isIdent(a.Left, "ops"); ok {
+					tok, errp := transpileOp(a.Right.(*List).Args[0])
+					if errp != nil {
+						et.Add(fmt.Errorf("Error in Operation: %s\n%v",
+							v,
+							errp))
+						break
+					}
+					bin.Op = tok
+				}
+				if _, ok := isIdent(a.Left, "comparators"); ok {
+					ep, errp := transpileExpr(a.Right.(*List).Args[0])
+					if errp != nil {
+						et.Add(errp)
+						break
+					}
+					bin.Y = ep
+				}
+			}
+			if !et.IsError() {
+				expr = &bin
+			}
+			break
+		}
+
+		// Str (
+		//   s = 'text'
+		// ) // Str
+		if v.Name == "Str" {
+			expr = goast.NewIdent("\"" + clearName(v.Args[0].(*Assign).Right.(*Ident).Name) + "\"")
+			break
 		}
 
 		// Call (
@@ -510,12 +610,12 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		if v.Name == "Attribute" {
 			name := ""
 			for i := range v.Args {
-				a,ok := v.Args[i].(*Assign)
+				a, ok := v.Args[i].(*Assign)
 				if !ok {
 					continue
 				}
-				_,ok1 := isIdent(a.Left, "value")
-				_,ok2 := isIdent(a.Left, "attr")
+				_, ok1 := isIdent(a.Left, "value")
+				_, ok2 := isIdent(a.Left, "attr")
 				if !(ok1 || ok2) {
 					continue
 				}
@@ -531,7 +631,11 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 				}
 			}
 			if !et.IsError() {
-				expr = goast.NewIdent(name[:len(name)-2]) // for avoid last point
+				if name[len(name)-1] == '.' {
+					// for avoid last point
+					name = name[:len(name)-1]
+				}
+				expr = goast.NewIdent(name)
 			}
 			break
 		}
@@ -557,9 +661,11 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 					bin.X = ep
 				}
 				if _, ok := isIdent(a.Left, "op"); ok {
-					tok, errp := tranpileOp(a.Right)
+					tok, errp := transpileOp(a.Right)
 					if errp != nil {
-						et.Add(errp)
+						et.Add(fmt.Errorf("Error in Operation: %s\n%v",
+							v,
+							errp))
 						break
 					}
 					bin.Op = tok
@@ -598,7 +704,9 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 					Args: []goast.Expr{bin.X, bin.Y},
 				}
 			} else {
-				expr = &bin
+				if !et.IsError() {
+					expr = &bin
+				}
 			}
 			break
 		}
@@ -619,7 +727,7 @@ const (
 	POW token.Token = 100000
 )
 
-func tranpileOp(n Node) (tok token.Token, err error) {
+func transpileOp(n Node) (tok token.Token, err error) {
 	et := errors.New("Error in func transpileOp")
 	l, ok := n.(*List)
 	if !ok {
@@ -627,17 +735,27 @@ func tranpileOp(n Node) (tok token.Token, err error) {
 		return
 	}
 	switch l.Name {
+	case "Not":
+		tok = token.NOT
 	case "Mult":
 		tok = token.MUL
 	case "Add":
 		tok = token.ADD
 	case "Pow":
 		tok = POW
+	case "Eq":
+		tok = token.EQL
 	case "Div":
 		tok = token.QUO
+	case "Gt":
+		tok = token.GTR
+	case "Sub":
+		tok = token.SUB
+	case "Mod":
+		tok = token.ADD // concat for strings
 	default:
 		tok = token.AND_NOT_ASSIGN // some trash token
-		et.Add(fmt.Errorf("not valid token: %s", l.Name))
+		et.Add(fmt.Errorf("not valid token: %s for %s", l.Name, n))
 	}
 	if et.IsError() {
 		err = et
