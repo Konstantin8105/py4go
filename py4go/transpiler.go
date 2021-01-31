@@ -162,12 +162,9 @@ func transpile(n Node) (decls []goast.Decl, stmts []goast.Stmt, err error) {
 					continue
 				}
 				if _, ok := isIdent(a.Left, "name"); ok {
-					n,en := transpileExpr(a.Right)
-					if en!=nil{
-						et.Add(en)
-						continue
-					}
-					decl.Name = n
+					name := fmt.Sprintf("%s", a.Right)
+					decl.Name = goast.NewIdent(clearName(name))
+
 				}
 				if _, ok := isIdent(a.Left, "body"); ok {
 					var (
@@ -260,9 +257,6 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			//   targets =  [
 			//     Name (
 			//       id = 'x'
-			//       ctx = Store (
-			//
-			//       ) // Store
 			//     ) // Name
 			//   ] //
 			//   value = Num (
@@ -285,12 +279,28 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			// .  .  Value: "0"
 			// .  }
 			// }
-			var left, right goast.Expr
+
+			// Assign (
+			//   targets =  [
+			//     Tuple (
+			//       elts =  [
+			//         Name (
+			//         ) // Name
+			//         Name (
+			//         ) // Name
+			//       ] //
+			//     ) // Tuple
+			//   ] //
+			//   value = ...
+			// )
+
+			var left []goast.Expr
+			var right goast.Expr
 			for i := range v.Args {
 				if a, ok := v.Args[i].(*Assign); ok {
 					if _, ok := isIdent(a.Left, "targets"); ok {
 						var errLeft error
-						left, errLeft = transpileExpr(a.Right.(*List).Args[0])
+						left, errLeft = transpileExprs(a.Right.(*List).Args[0])
 						if errLeft != nil {
 							et.Add(errLeft)
 							break
@@ -306,10 +316,12 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 					}
 				}
 			}
-			stmt = &goast.AssignStmt{
-				Lhs: []goast.Expr{left},
-				Tok: token.ASSIGN,
-				Rhs: []goast.Expr{right},
+			if !et.IsError() {
+				stmt = &goast.AssignStmt{
+					Lhs: left,
+					Tok: token.ASSIGN,
+					Rhs: []goast.Expr{right},
+				}
 			}
 
 		case "Return":
@@ -434,6 +446,60 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 	return
 }
 
+func transpileExprs(n Node) (expr []goast.Expr, err error) {
+	et := errors.New("Error in func transpileExpr")
+	l, ok := n.(*List)
+	if !ok {
+		return
+	}
+	for i := range l.Args {
+		ll, ok := l.Args[i].(*List)
+		if !ok {
+			continue
+		}
+		if ll.Name == "Tuple" {
+			//   [
+			//     Tuple (
+			//       elts =  [
+			//         Name ( ... )
+			//         Name ( ... )
+			//       ] //
+			//     )
+			//   ]
+			lv := ll.Args[0].(*Assign).Right.(*List)
+			for k := range lv.Args {
+				n, en := transpileExpr(lv.Args[k])
+				if en != nil {
+					et.Add(en)
+					continue
+				}
+				if !et.IsError() {
+					expr = append(expr, n)
+				}
+			}
+			continue
+		}
+		//   [
+		//     Name ( ... )
+		//   ]
+		n, en := transpileExpr(ll.Args[0])
+		if en != nil {
+			et.Add(en)
+			continue
+		}
+		if !et.IsError() {
+			expr = append(expr, n)
+		}
+	}
+
+	if et.IsError() {
+		err = et
+		return
+	}
+	return
+
+}
+
 func transpileExpr(n Node) (expr goast.Expr, err error) {
 	et := errors.New("Error in func transpileExpr")
 	switch v := n.(type) {
@@ -472,6 +538,37 @@ func transpileExpr(n Node) (expr goast.Expr, err error) {
 		//	)
 		if v.Name == "Expr" {
 			return transpileExpr(v.Args[0])
+		}
+
+		// Subscript (
+		//   value = Name ( ... )
+		//   slice = Slice (
+		//      lower = None
+		//      upper = None
+		//      step = None
+		//   ) // Slice
+		// ) // Subscript
+		if v.Name == "Subscript" {
+			sl := goast.SliceExpr{}
+			for i := range v.Args {
+				a, ok := v.Args[i].(*Assign)
+				if !ok {
+					continue
+				}
+				_, ok1 := isIdent(a.Left, "value")
+				if ok1 {
+					ea, erra := transpileExpr(v.Args[i])
+					if erra != nil {
+						et.Add(erra)
+						continue
+					}
+					sl.X = ea
+				}
+			}
+			if !et.IsError() {
+				expr = &sl
+			}
+			break
 		}
 
 		// UnaryOp (
