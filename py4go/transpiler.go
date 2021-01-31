@@ -229,7 +229,15 @@ func transpileStmts(n Node) (stmts []goast.Stmt, err error) {
 		for i := range v.Args {
 			stmt, errStmt := transpileStmt(v.Args[i])
 			if errStmt != nil {
-				et.Add(errStmt)
+				lines := strings.Split(fmt.Sprintf("%v", errStmt), "\n")
+				stmts = append(stmts, &goast.ExprStmt{
+					X: goast.NewIdent("/" + "/ Find PY4GO error"),
+				})
+				for k := range lines {
+					stmts = append(stmts, &goast.ExprStmt{
+						X: goast.NewIdent("/" + "/ " + lines[k]),
+					})
+				}
 				continue
 			}
 			if stmt != nil {
@@ -445,7 +453,6 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 		case "For":
 			// TODO:
 			// s = f(r,a)
-			// s *= 2
 			// if a>4 or b > 3:
 			et.Add(fmt.Errorf("%s", n))
 
@@ -830,7 +837,7 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 					}
 				}
 				if bin.X == nil || bin.Y == nil {
-					panic("1")
+					et.Add(fmt.Errorf("Nil binary: %s", n))
 				}
 				if !et.IsError() {
 					exprs = append(exprs, &bin)
@@ -868,10 +875,17 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 							}
 							var fs []goast.Expr
 							fs, errFun = transpileExprs(a.Right)
-							if len(fs) == 1 {
-								callExpr.Fun = fs[0]
+
+							if len(fs) == 0 {
+								et.Add(fmt.Errorf("right is zero"))
 							} else {
-								panic(fs)
+								callExpr.Fun = fs[0]
+								for k := 1; k < len(fs); k++ {
+									callExpr.Fun = &goast.SelectorExpr{
+										X:   callExpr.Fun,
+										Sel: fs[k].(*goast.Ident),
+									}
+								}
 							}
 						}
 					}
