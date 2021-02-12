@@ -69,7 +69,6 @@ func view(g interface{}) {
 	_ = format.Node(&buf, token.NewFileSet(), g)
 
 	fmt.Println(buf.String())
-
 }
 
 func clearName(str string) string {
@@ -117,9 +116,16 @@ func exprsSel(exprs []goast.Expr) (e goast.Expr, err error) {
 	}
 	e = exprs[0]
 	for k := 1; k < len(exprs); k++ {
-		e = &goast.SelectorExpr{
-			X:   e,
-			Sel: exprs[k].(*goast.Ident),
+		if id, ok := exprs[k].(*goast.Ident); ok {
+			e = &goast.SelectorExpr{
+				X:   e,
+				Sel: id,
+			}
+		} else {
+			e = &goast.IndexExpr{
+				X: e,
+				Index: exprs[k],
+			}
 		}
 	}
 	return
@@ -484,8 +490,66 @@ func transpileStmt(n Node) (stmt goast.Stmt, err error) {
 			}
 
 		case "For":
-			// TODO:
-			et.Add(fmt.Errorf("%s", n))
+			// Python: for iData in sData:
+			//
+			// AST:
+			// For (
+			//   target = Name (
+			//     id = 'iData'
+			//   )
+			//   iter = Name (
+			//     id = 'sData'
+			//   )
+			//   body =  [
+			//   ]
+			// )
+			//
+			// type RangeStmt struct {
+			//     Key, Value Expr
+			//     Tok        token.Token
+			//     X          Expr
+			//     Body       *BlockStmt
+			// }
+			rangestmt := goast.RangeStmt{
+				Tok: token.DEFINE,
+			}
+			for i := range v.Args {
+				if a, ok := isAssign(v.Args[i], "target"); ok {
+					expr, errExpr := transpileExprs(a.Right)
+					if errExpr != nil {
+						et.Add(errExpr)
+						break
+					}
+					if len(expr) != 1 {
+						continue
+					}
+					rangestmt.Key = expr[0]
+				}
+				if a, ok := isAssign(v.Args[i], "iter"); ok {
+					expr, errExpr := transpileExprs(a.Right)
+					if errExpr != nil {
+						et.Add(errExpr)
+						break
+					}
+					if len(expr) != 1 {
+						continue
+					}
+					rangestmt.X = expr[0]
+				}
+				if a, ok := isAssign(v.Args[i], "body"); ok {
+					stmts, errStmts := transpileStmts(a.Right)
+					if errStmts != nil {
+						et.Add(errStmts)
+						break
+					}
+					rangestmt.Body = &goast.BlockStmt{
+						List: stmts,
+					}
+				}
+			}
+			if !et.IsError() {
+				stmt = &rangestmt
+			}
 
 		case "While":
 			// While (
@@ -767,6 +831,12 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 					}
 				}
 			}
+
+			defer func() {
+				if err != nil {
+					err = fmt.Errorf("Name: %v\n%v", v.Name, err)
+				}
+			}()
 
 			switch v.Name {
 			case "":
@@ -1152,6 +1222,7 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 			continue
 		}
 		if erre != nil {
+			et.Add(fmt.Errorf("Error function: %d", i))
 			et.Add(erre)
 		} else {
 			exprs = append(exprs, es...)
