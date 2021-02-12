@@ -668,6 +668,16 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 			}
 			ok = true
 			exprs, err = transpileExprs(a.Right)
+			if err != nil {
+				et.Add(err)
+			} else {
+				s, errs := exprsSel(exprs)
+				if errs != nil {
+					err = errs
+				} else {
+					exprs = append([]goast.Expr{}, s)
+				}
+			}
 			return
 		},
 
@@ -979,7 +989,7 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 					if !ok {
 						continue
 					}
-					_, ok1 := isIdent(a.Left, "value")
+					_, ok1 := isIdent(a.Left, "value") // TODO : Subscript!!!
 					_, ok2 := isIdent(a.Left, "attr")
 					if !(ok1 || ok2) {
 						continue
