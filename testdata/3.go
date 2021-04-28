@@ -1,7 +1,7 @@
 package main
 
 func __init__() {
-	super(Structure, self).__init__()
+	.__init__()
 	self.main_dict = main_dict
 	self.plate_th = main_dict["plate_thk"][0]
 	self.web_height = main_dict["stf_web_height"][0]
@@ -575,7 +575,7 @@ func set_span() {
 	self.main_dict["span"][0] = span
 }
 func __init__() {
-	super(CalcScantlings, self).__init__()
+	.__init__()
 	self.lat_press = lat_press
 	self.category = category
 	self._need_recalc = True
@@ -5402,7 +5402,7 @@ func is_acceptable_pl_thk() {
 	//
 }
 func __init__() {
-	super(CalcFatigue, self).__init__(main_dict, fatigue_dict)
+	.__init__(main_dict, fatigue_dict)
 	// Find PY4GO error
 	// Error in func transpileStmt
 	// └──Error in func transpileExprs
