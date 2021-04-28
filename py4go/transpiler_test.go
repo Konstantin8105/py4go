@@ -9,6 +9,8 @@ func TestTranspile(t *testing.T) {
 	filenames := []string{
 		"../testdata/p.py",
 		"../testdata/PyFEM-master/pyfem/solvers/RiksSolver.py",
+		"../testdata/calc_loads.py",
+		"../testdata/calc_structure.py",
 	}
 	for index, f := range filenames {
 		asttree, err := Parse(f)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	goast "go/ast"
 	"go/format"
+	"go/printer"
 	"go/token"
 	"runtime/debug"
 	"strings"
@@ -123,7 +124,7 @@ func exprsSel(exprs []goast.Expr) (e goast.Expr, err error) {
 			}
 		} else {
 			e = &goast.IndexExpr{
-				X: e,
+				X:     e,
 				Index: exprs[k],
 			}
 		}
@@ -1072,7 +1073,9 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 					if id, ok := ea[0].(*goast.Ident); ok {
 						name += id.Name + "."
 					} else {
-						et.Add(fmt.Errorf("Expect goast.Ident: %v for %s", ea, v.Args[i]))
+						var buf bytes.Buffer
+						printer.Fprint(&buf, token.NewFileSet(), ea)
+						name += buf.String() + "."
 					}
 				}
 				if !et.IsError() {
