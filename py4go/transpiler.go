@@ -1070,11 +1070,9 @@ func transpileExprs(n Node) (exprs []goast.Expr, err error) {
 						et.Add(erra)
 						continue
 					}
-					if id, ok := ea[0].(*goast.Ident); ok {
-						name += id.Name + "."
-					} else {
+					for i := range ea {
 						var buf bytes.Buffer
-						printer.Fprint(&buf, token.NewFileSet(), ea)
+						printer.Fprint(&buf, token.NewFileSet(), ea[i])
 						name += buf.String() + "."
 					}
 				}
